@@ -38,6 +38,25 @@ describe("assign", () => {
     assert.equal((await assign("j1")).status, 409);
   });
 
+  it("queues only one project for concurrent requests from the same judge", async () => {
+    const responses = await Promise.all([assign("j1"), assign("j1")]);
+    assert.deepEqual(responses.map((res) => res.status).sort(), [201, 409]);
+  });
+
+  it("queues distinct projects for concurrent judges and reports when all are taken", async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 11 }, (_, i) => assign(`j${i + 1}`))
+    );
+    const assigned = responses.filter((res) => res.status === 201);
+    assert.equal(assigned.length, 10);
+    const projects = await Promise.all(assigned.map(async (res) => (await res.json()).projectId));
+    assert.equal(new Set(projects).size, 10);
+
+    const unavailable = responses.find((res) => res.status === 404);
+    assert.ok(unavailable);
+    assert.deepEqual(await unavailable.json(), { error: "no projects available" });
+  });
+
   it("does not give a judge the same project twice", async () => {
     const first = await (await assign("j1")).json();
     await complete(first._id);
